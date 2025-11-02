@@ -209,8 +209,7 @@ def check_if_logged_in():
     # Define a list of endpoints that do NOT require authentication
     open_routes = [
         'login',
-        'signup',
-        'helloworld' # We'll remove this later
+        'signup'
     ]
     
     # If the request endpoint is not in our "open" list,
@@ -226,12 +225,6 @@ def check_if_logged_in():
 
 # --- API Resource Routing ---
 
-# A simple test route (we'll remove this later)
-class HelloWorld(Resource):
-    def get(self):
-        return {'hello': 'world'}
-
-api.add_resource(HelloWorld, '/', endpoint='helloworld')
 api.add_resource(Signup, '/api/signup', endpoint='signup')
 api.add_resource(Login, '/api/login', endpoint='login')
 api.add_resource(Me, '/api/me', endpoint='me')
