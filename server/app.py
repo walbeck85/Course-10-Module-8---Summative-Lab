@@ -4,7 +4,7 @@
 from server.config import app, api, db, bcrypt, jwt
 
 # Import models and schemas
-from server.models import User, Workout, user_schema, workout_schema
+from server.models import User, Workout, user_schema, workout_schema, workouts_schema
 
 # Import auth and error handling tools
 from flask_restful import Resource
@@ -19,12 +19,10 @@ class Signup(Resource):
     def post(self):
         data = request.get_json()
         
-        # --- FIX IS HERE ---
         # 1. Pop the password out of the data before loading
         password = data.pop('password', None)
         if not password:
              return make_response(jsonify({"error": "Password is required"}), 422)
-        # -------------------
 
         # Validate username
         try:
@@ -102,6 +100,107 @@ class Logout(Resource):
         response.delete_cookie('access_token_cookie')
         return response
 
+# --- Workout Routes ---
+    
+class WorkoutsList(Resource):
+    @jwt_required()
+    def get(self):
+        # Get pagination args, default to page 1, 5 items per page
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 5, type=int)
+        
+        # Get the user ID from the JWT
+        current_user_id = get_jwt_identity()
+        
+        # Query and paginate workouts *only for the current user*
+        workouts = Workout.query.filter_by(user_id=current_user_id).paginate(
+            page=page, 
+            per_page=per_page, 
+            error_out=False
+        )
+        
+        # Format the response with pagination metadata
+        response_data = {
+            "page": workouts.page,
+            "per_page": workouts.per_page,
+            "total": workouts.total,
+            "total_pages": workouts.pages,
+            "items": workouts_schema.dump(workouts.items)
+        }
+        
+        return make_response(jsonify(response_data), 200)
+
+    @jwt_required()
+    def post(self):
+        current_user_id = get_jwt_identity()
+        data = request.get_json()
+
+        try:
+            # Load and validate the workout data
+            new_workout = workout_schema.load(data, session=db.session)
+            
+            # Assign the workout to the logged-in user
+            new_workout.user_id = current_user_id
+            
+            db.session.add(new_workout)
+            db.session.commit()
+            
+            return make_response(workout_schema.dump(new_workout), 201)
+
+        except Exception as e:
+            db.session.rollback()
+            return make_response(jsonify({"errors": [str(e)]}), 422)
+
+class WorkoutById(Resource):
+    @jwt_required()
+    def patch(self, id):
+        current_user_id = int(get_jwt_identity())
+        
+        workout = Workout.query.get(id)
+        
+        if not workout:
+            return make_response(jsonify({"error": "Workout not found"}), 404)
+        
+        # --- OWNERSHIP CHECK ---
+        if workout.user_id != current_user_id:
+            return make_response(jsonify({"error": "Forbidden: You do not own this workout"}), 403)
+        
+        data = request.get_json()
+        
+        try:
+            # Update the workout with new data
+            workout_schema.load(data, instance=workout, partial=True, session=db.session)
+            db.session.commit()
+            
+            return make_response(workout_schema.dump(workout), 200)
+
+        except Exception as e:
+            db.session.rollback()
+            return make_response(jsonify({"errors": [str(e)]}), 422)
+
+    @jwt_required()
+    def delete(self, id):
+        current_user_id = int(get_jwt_identity())
+        
+        workout = Workout.query.get(id)
+        
+        if not workout:
+            return make_response(jsonify({"error": "Workout not found"}), 404)
+        
+        # --- OWNERSHIP CHECK ---
+        if workout.user_id != current_user_id:
+            return make_response(jsonify({"error": "Forbidden: You do not own this workout"}), 403)
+            
+        try:
+            db.session.delete(workout)
+            db.session.commit()
+            
+            return make_response({}, 204) # 204 No Content
+
+        except Exception as e:
+            db.session.rollback()
+            return make_response(jsonify({"error": str(e)}), 500)
+
 # --- Authorization Hook ---
 
 # This hook will run before every request
@@ -137,6 +236,10 @@ api.add_resource(Signup, '/api/signup', endpoint='signup')
 api.add_resource(Login, '/api/login', endpoint='login')
 api.add_resource(Me, '/api/me', endpoint='me')
 api.add_resource(Logout, '/api/logout', endpoint='logout')
+
+# Add the new workout routes
+api.add_resource(WorkoutsList, '/api/workouts', endpoint='workouts')
+api.add_resource(WorkoutById, '/api/workouts/<int:id>', endpoint='workout_by_id')
 
 # This block is essential for running the app directly
 if __name__ == '__main__':

@@ -22,6 +22,14 @@ app.json.compact = False  # Makes JSON responses more readable in development
 # Set a secret key for JWT (replace with a real, random key in production)
 app.config['JWT_SECRET_KEY'] = 'your-super-secret-jwt-key' 
 
+# Tell JWT to look for the token in cookies
+app.config['JWT_TOKEN_LOCATION'] = ['cookies']
+
+# We are disabling CSRF protection for this lab's cookie-based auth
+# to simplify testing with cURL.
+app.config['JWT_COOKIE_CSRF_PROTECT'] = False
+# ---------------------
+
 # Initialize extensions
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
